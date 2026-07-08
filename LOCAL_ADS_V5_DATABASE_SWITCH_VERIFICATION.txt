@@ -1,0 +1,8 @@
+PASS - Login page demo credentials block removed.
+PASS - Production admin bootstrap script added.
+PASS - Package script db:prod-admin added.
+PASS - Package script db:setup-production added.
+PASS - Demo seed users now require SEED_DEMO_USERS=true.
+PASS - New Supabase setup guide added.
+PASS - No pasted Supabase password/JWT/service-role secret found in project files.
+NOTE - npm run typecheck could not be validated here because node_modules is not installed in the sandbox. Run npm ci first locally or on Vercel.

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "corepack enable && corepack prepare pnpm@10.24.0 --activate && pnpm install --no-frozen-lockfile --prefer-offline=false",
+  "buildCommand": "pnpm run build",
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "maxDuration": 30
+    }
+  }
+}
