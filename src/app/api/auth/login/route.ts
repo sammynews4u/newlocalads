@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { verifyPassword, createToken, setAuthCookie } from '@/lib/auth';
+// Removed setAuthCookie from here, as we are handling it directly in the response
+import { verifyPassword, createToken } from '@/lib/auth';
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -59,10 +60,8 @@ export async function POST(request: NextRequest) {
       role: user.role,
     });
 
-    // Set cookie
-    await setAuthCookie(token);
-
-    return NextResponse.json({
+    // 1. Create the response object FIRST
+    const response = NextResponse.json({
       success: true,
       user: {
         id: user.id,
@@ -73,6 +72,20 @@ export async function POST(request: NextRequest) {
         lastName: user.lastName,
       },
     });
+
+    // 2. Attach the cookie directly to the outgoing Next.js response
+    // IMPORTANT: Ensure 'token' matches the cookie name your middleware.ts expects!
+    response.cookies.set('token', token, { 
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 7, // 1 week
+    });
+
+    // 3. Return the response with the cookie baked in
+    return response;
+
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
