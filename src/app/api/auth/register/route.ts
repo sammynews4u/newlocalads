@@ -49,12 +49,12 @@ function normalizeDomain(input?: string | null): string | undefined {
 }
 
 const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  role: z.enum(['advertiser', 'publisher']),
+  email: z.string().email('Invalid email format'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  role: z.enum(['advertiser', 'publisher'], { errorMap: () => ({ message: 'Role must be either advertiser or publisher' }) }),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  referralCode: z.string().optional(), // who referred them
+  referralCode: z.string().optional(),
   // Advertiser fields
   companyName: z.string().optional(),
   website: z.string().optional(),
@@ -77,18 +77,44 @@ export async function POST(request: NextRequest) {
     const publisherWebsite = cleanOptionalString(validated.blogUrl);
     const publisherSocialLinks = cleanSocialLinks(validated.socialMedia);
 
-    if (validated.role === 'advertiser' && !advertiserWebsite) {
-      return NextResponse.json(
-        { error: 'Company website is required for advertiser accounts' },
-        { status: 400 }
-      );
+    // Enhanced validation with detailed error messages
+    if (validated.role === 'advertiser') {
+      if (!advertiserWebsite) {
+        return NextResponse.json(
+          { 
+            error: 'Company website is required',
+            code: 'MISSING_ADVERTISER_WEBSITE',
+            field: 'website'
+          },
+          { status: 400 }
+        );
+      }
+      // Validate website format
+      try {
+        new URL(advertiserWebsite.startsWith('http') ? advertiserWebsite : `https://${advertiserWebsite}`);
+      } catch {
+        return NextResponse.json(
+          { 
+            error: 'Invalid website URL format',
+            code: 'INVALID_WEBSITE_URL',
+            field: 'website'
+          },
+          { status: 400 }
+        );
+      }
     }
 
-    if (validated.role === 'publisher' && !publisherWebsite && !publisherSocialLinks) {
-      return NextResponse.json(
-        { error: 'Please submit at least one website or social media link for publisher verification' },
-        { status: 400 }
-      );
+    if (validated.role === 'publisher') {
+      if (!publisherWebsite && !publisherSocialLinks) {
+        return NextResponse.json(
+          { 
+            error: 'Please provide at least one website or social media link for verification',
+            code: 'MISSING_PUBLISHER_INFO',
+            field: 'blogUrl'
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Check if user exists
@@ -96,7 +122,13 @@ export async function POST(request: NextRequest) {
       where: eq(users.email, validated.email.toLowerCase()),
     });
     if (existingUser) {
-      return NextResponse.json({ error: 'Email already registered' }, { status: 400 });
+      return NextResponse.json(
+        { 
+          error: 'Email already registered',
+          code: 'EMAIL_ALREADY_EXISTS'
+        }, 
+        { status: 400 }
+      );
     }
 
     // Find referrer if referral code provided
@@ -110,7 +142,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Generate unique referral code for every user so any user can invite others.
+    // Generate unique referral code for every user
     const referralCode = await createUniqueReferralCode();
 
     const passwordHash = await hashPassword(validated.password);
@@ -146,7 +178,7 @@ export async function POST(request: NextRequest) {
         niches: validated.niches || [],
       });
 
-      // Store the submitted website as a pending publisher site so admin can review it before approval.
+      // Store the submitted website as a pending publisher site
       const domain = normalizeDomain(publisherWebsite);
       if (domain) {
         const existingSite = await db.query.publisherSites.findFirst({
@@ -173,13 +205,40 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user: { id: user.id, email: user.email, role: user.role, status: user.status, firstName: user.firstName, lastName: user.lastName, referralCode },
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        role: user.role, 
+        status: user.status, 
+        firstName: user.firstName, 
+        lastName: user.lastName, 
+        referralCode 
+      },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Validation failed', details: error.issues }, { status: 400 });
+      const fieldErrors = error.issues.reduce((acc, issue) => {
+        const field = issue.path[0] as string;
+        acc[field] = issue.message;
+        return acc;
+      }, {} as Record<string, string>);
+      
+      return NextResponse.json(
+        { 
+          error: 'Validation failed', 
+          code: 'VALIDATION_ERROR',
+          details: fieldErrors 
+        }, 
+        { status: 400 }
+      );
     }
     console.error('Registration error:', error);
-    return NextResponse.json({ error: 'Registration failed' }, { status: 500 });
+    return NextResponse.json(
+      { 
+        error: 'Registration failed. Please try again.',
+        code: 'REGISTRATION_ERROR'
+      }, 
+      { status: 500 }
+    );
   }
 }
